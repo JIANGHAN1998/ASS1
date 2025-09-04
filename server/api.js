@@ -6,24 +6,39 @@ import "dotenv/config";
 
 const app = express();
 
-// ===== 中间件 =====
-app.use(cors()); // 如需只放行 Netlify，可改为：app.use(cors({ origin: ["https://<your>.netlify.app"] }))
+/* =======================
+ * 中间件
+ * ======================= */
+const allowList = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(
+  allowList.length
+    ? cors({ origin: allowList })
+    : cors() // 和你原来一样，默认全放行
+);
 app.use(express.json());
 
-// ===== MySQL 连接池 =====
+/* =======================
+ * MySQL 连接池
+ * ======================= */
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
-  database: process.env.DB_NAME, // 在环境变量中配置 DB_NAME=swim
+  database: process.env.DB_NAME, // DB_NAME=swim
   waitForConnections: true,
   connectionLimit: 5,
-  // Azure MySQL 需启用 SSL；若不需要可移除或置空 DB_SSL
+  // Azure MySQL 需要 SSL；有 DB_SSL 就开启（与原行为一致）
   ssl: process.env.DB_SSL ? { rejectUnauthorized: false } : undefined,
 });
 
-// ===== 路由 =====
+/* =======================
+ * 路由
+ * ======================= */
 
 // 根路径提示
 app.get("/", (_req, res) => {
@@ -39,6 +54,11 @@ app.get("/api/ping", async (_req, res) => {
     console.error("Ping error:", e);
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// 兼容旧路径：/api/sites0 → /api/sites
+app.get("/api/sites0", (_req, res) => {
+  res.redirect(301, "/api/sites");
 });
 
 // 列出沙滩点位
@@ -81,13 +101,18 @@ app.get("/api/sites/:id", async (req, res) => {
   }
 });
 
-// ===== 全局兜底错误处理 =====
+/* =======================
+ * 全局兜底错误处理
+ * ======================= */
 app.use((err, _req, res, _next) => {
   console.error("Unexpected error:", err);
   res.status(500).json({ error: "internal_server_error" });
 });
 
-// ===== 启动服务 =====
+/* =======================
+ * 启动服务
+ * Render 会注入 PORT；本地仍兼容 8787
+ * ======================= */
 const PORT = Number(process.env.PORT || 8787);
 app.listen(PORT, () => {
   console.log(`🚀 API listening at http://localhost:${PORT}`);
