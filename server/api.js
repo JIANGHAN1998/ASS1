@@ -7,7 +7,7 @@ import "dotenv/config";
 const app = express();
 
 // ===== 中间件 =====
-app.use(cors());
+app.use(cors()); // 如需只放行 Netlify，可改为：app.use(cors({ origin: ["https://<your>.netlify.app"] }))
 app.use(express.json());
 
 // ===== MySQL 连接池 =====
@@ -16,9 +16,10 @@ const pool = mysql.createPool({
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
-  database: process.env.DB_NAME,        // 在 .env 中写 DB_NAME=swim
+  database: process.env.DB_NAME, // 在环境变量中配置 DB_NAME=swim
   waitForConnections: true,
   connectionLimit: 5,
+  // Azure MySQL 需启用 SSL；若不需要可移除或置空 DB_SSL
   ssl: process.env.DB_SSL ? { rejectUnauthorized: false } : undefined,
 });
 
@@ -50,7 +51,7 @@ app.get("/api/sites", async (_req, res) => {
         "water_body, " +
         "CAST(latitude  AS DECIMAL(10,6))  AS latitude, " +
         "CAST(longitude AS DECIMAL(10,6))  AS longitude " +
-        "FROM `swim`.`site` " + // ✅ 表名为 site（单数）
+        "FROM `swim`.`site` " + // 表名为 site（单数）
         "WHERE latitude IS NOT NULL AND longitude IS NOT NULL " +
         "LIMIT 1000"
     );
@@ -88,6 +89,6 @@ app.use((err, _req, res, _next) => {
 
 // ===== 启动服务 =====
 const PORT = Number(process.env.PORT || 8787);
-app.listen(PORT, () =>
-  console.log(`🚀 API listening at http://localhost:${PORT}`)
-);
+app.listen(PORT, () => {
+  console.log(`🚀 API listening at http://localhost:${PORT}`);
+});
