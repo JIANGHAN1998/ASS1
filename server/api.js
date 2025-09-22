@@ -6,30 +6,34 @@ import "dotenv/config";
 
 const app = express();
 
-/* ========== 中间件 ========== */
+/* ========== CORS ========== */
 const allowList = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map(s => s.trim())
   .filter(Boolean);
-
 app.use(allowList.length ? cors({ origin: allowList }) : cors());
 app.use(express.json());
 
-/* ========== MySQL 连接池 ========== */
+/* ========== MySQL Pool ========== */
+const DB_NAME = process.env.DB_NAME || "swim";
+// 明细数据表（默认用 enterococci；若以后要切表，可在云端配置 ANALYTICS_TABLE=report）
+const ANALYTICS_TABLE = (process.env.ANALYTICS_TABLE || "enterococci").trim();
+// 用于拼接完全限定名
+const T_ANALYTICS = `\`${DB_NAME}\`.\`${ANALYTICS_TABLE}\``;
+const T_SITE = `\`${DB_NAME}\`.\`site\``;
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
-  database: process.env.DB_NAME,
+  database: DB_NAME, // 默认库；查询里仍使用全限定表名
   waitForConnections: true,
   connectionLimit: 5,
   ssl: process.env.DB_SSL ? { rejectUnauthorized: false } : undefined,
 });
 
-const DB_NAME = process.env.DB_NAME || "swim";
-
-/* ========== Port Phillip Bay 站点清单 ========== */
+/* ========== 固定站点列表（用于地图聚合） ========== */
 const SITES_FROM_SPEC = [
   { site_id: 99020, site_name: "Port Melbourne", water_body: "Port Phillip Bay", latitude: "-37.843866", longitude: "144.937766" },
   { site_id: 99060, site_name: "Hampton", water_body: "Port Phillip Bay", latitude: "-37.938000", longitude: "144.997116" },
@@ -69,33 +73,40 @@ const SITES_FROM_SPEC = [
   { site_id: 99999, site_name: "Black Rock Life Saving Club", water_body: "Port Phillip Bay", latitude: "-37.974777", longitude: "145.014242" }
 ];
 
-/* ========== 工具函数 ========== */
+/* ========== Helpers ========== */
 function normalizeLevel(raw) {
   if (!raw) return "unknown";
   const t = raw.trim().toLowerCase();
   if (t === "safe" || t === "relatively safe") return "green";
   if (t === "caution") return "amber";
   if (t === "unsafe") return "red";
-  return "amber"; // 默认中间
+  return "amber";
 }
-
 function decideStatus(b) {
-  if (!b || b.total === 0) return "amber"; // 默认给 amber
+  if (!b || b.total === 0) return "amber";
   const redRatio = b.red / b.total;
   const amberRatio = b.amber / b.total;
   const greenRatio = b.green / b.total;
-
   if (redRatio >= 0.05) return "red";
   if (amberRatio >= 0.1) return "amber";
   if (greenRatio >= 0.9) return "green";
   return "amber";
 }
 
-/* ========== 原有 API ========== */
+/* ========== Health ========== */
 app.get("/", (_req, res) => {
   res.type("text").send("✅ API OK. Try /api/sites");
 });
+app.get("/api/health/db", async (_req, res) => {
+  try {
+    const [rows] = await pool.query(`SELECT 1 AS ok`);
+    res.json({ ok: true, rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
 
+/* ========== /api/sites（地图聚合） ========== */
 app.get("/api/sites", async (_req, res) => {
   try {
     const siteIds = SITES_FROM_SPEC.map(s => s.site_id);
@@ -107,7 +118,7 @@ app.get("/api/sites", async (_req, res) => {
         enterococci_site_id AS site_id,
         LOWER(TRIM(enterococci_quality_level)) AS raw_level,
         COUNT(*) AS cnt
-      FROM \`${DB_NAME}\`.enterococci
+      FROM \`${DB_NAME}\`.\`enterococci\`
       WHERE enterococci_site_id IN (${placeholders})
       GROUP BY enterococci_site_id, LOWER(TRIM(enterococci_quality_level))
       `,
@@ -146,14 +157,19 @@ app.get("/api/sites", async (_req, res) => {
   }
 });
 
-/* ========== 新增：Dashboard API ========== */
-app.get("/api/beaches", async (req, res) => {
+/* ========== Dashboard APIs（使用 ANALYTICS_TABLE，默认 enterococci） ========== */
+app.get("/api/beaches", async (_req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT site_id, site_name, water_body FROM site ORDER BY site_name ASC"
+      `
+      SELECT site_id, site_name, water_body
+      FROM ${T_SITE}
+      ORDER BY site_name ASC
+      `
     );
     res.json(rows);
   } catch (e) {
+    console.error("Beaches error:", e);
     res.status(500).json({ error: "Failed to list beaches", detail: e.message });
   }
 });
@@ -165,7 +181,7 @@ app.get("/api/beach-data", async (req, res) => {
   }
   try {
     const [beachRows] = await pool.query(
-      "SELECT site_name FROM site WHERE site_id = ?",
+      `SELECT site_name FROM ${T_SITE} WHERE site_id = ?`,
       [beachId]
     );
     if (beachRows.length === 0) {
@@ -173,15 +189,16 @@ app.get("/api/beach-data", async (req, res) => {
     }
     const beachName = beachRows[0].site_name;
 
+    // 注意：你的数据日期是 2013/12/10 这种格式，对应 %Y/%m/%d
     let sql = `
       SELECT 
         enterococci_date,
         enterococci_quality_level,
         enterococci_value,
         enterococci_sample_type,
-        YEAR(STR_TO_DATE(enterococci_date, '%Y/%m/%d')) as year,
-        MONTH(STR_TO_DATE(enterococci_date, '%Y/%m/%d')) as month
-      FROM enterococci 
+        YEAR(STR_TO_DATE(enterococci_date, '%Y/%m/%d')) AS year,
+        MONTH(STR_TO_DATE(enterococci_date, '%Y/%m/%d')) AS month
+      FROM ${T_ANALYTICS}
       WHERE enterococci_site_id = ?
     `;
     const params = [beachId];
@@ -199,7 +216,7 @@ app.get("/api/beach-data", async (req, res) => {
     let totalRating = 0;
 
     dataRows.forEach(row => {
-      const quality = row.enterococci_quality_level;
+      const quality = String(row.enterococci_quality_level || "").trim();
       qualityCounts[quality] = (qualityCounts[quality] || 0) + 1;
       const ratingMap = { "Safe": 4, "Relatively Safe": 3, "Caution": 2, "Unsafe": 1 };
       totalRating += ratingMap[quality] || 0;
@@ -214,25 +231,20 @@ app.get("/api/beach-data", async (req, res) => {
       else monthlyData[monthKey].poor++;
     });
 
-    const averageRating = totalTests > 0 ? (totalRating / totalTests).toFixed(2) : 0;
+    const averageRating = totalTests > 0 ? Number((totalRating / totalTests).toFixed(2)) : 0;
 
-    const monthlyArray = Object.entries(monthlyData).map(([month, data]) => ({
+    const monthlyArray = Object.entries(monthlyData).map(([month, d]) => ({
       month,
-      total: data.total,
-      goodPercent: ((data.good / data.total) * 100).toFixed(1),
-      fairPercent: ((data.fair / data.total) * 100).toFixed(1),
-      poorPercent: ((data.poor / data.total) * 100).toFixed(1)
+      total: d.total,
+      goodPercent: d.total ? Number(((d.good / d.total) * 100).toFixed(1)) : 0,
+      fairPercent: d.total ? Number(((d.fair / d.total) * 100).toFixed(1)) : 0,
+      poorPercent: d.total ? Number(((d.poor / d.total) * 100).toFixed(1)) : 0
     }));
 
-    res.json({
-      beachName,
-      totalTests,
-      averageRating,
-      qualityCounts,
-      monthlyData: monthlyArray,
-      rawData: dataRows
-    });
+    console.log("[beach-data]", { table: ANALYTICS_TABLE, beachId, year, rows: totalTests, db: DB_NAME });
+    res.json({ beachName, totalTests, averageRating, qualityCounts, monthlyData: monthlyArray, rawData: dataRows });
   } catch (e) {
+    console.error("Beach-data error:", e);
     res.status(500).json({ error: "Failed to get beach data", detail: e.message });
   }
 });
@@ -242,60 +254,68 @@ app.get("/api/beach-comparison", async (req, res) => {
   if (!beachIds) {
     return res.status(400).json({ error: "Beach IDs required" });
   }
-  const ids = beachIds.split(",").filter(id => /^\d+$/.test(id.trim())).slice(0, 3);
+  const ids = beachIds
+    .split(",")
+    .map(id => id.trim())
+    .filter(id => /^\d+$/.test(id))
+    .slice(0, 3);
+
   if (ids.length === 0) {
     return res.status(400).json({ error: "Valid beach IDs required" });
   }
+
   try {
     const results = [];
     for (const beachId of ids) {
       const [beachRows] = await pool.query(
-        "SELECT site_name FROM site WHERE site_id = ?",
+        `SELECT site_name FROM ${T_SITE} WHERE site_id = ?`,
         [beachId]
       );
       if (beachRows.length === 0) continue;
       const beachName = beachRows[0].site_name;
 
-      const [dataRows] = await pool.query(`
+      const [dataRows] = await pool.query(
+        `
         SELECT 
-          YEAR(STR_TO_DATE(enterococci_date, '%Y/%m/%d')) as year,
+          YEAR(STR_TO_DATE(enterococci_date, '%Y/%m/%d')) AS year,
           enterococci_quality_level,
-          COUNT(*) as count
-        FROM enterococci 
+          COUNT(*) AS count
+        FROM ${T_ANALYTICS}
         WHERE enterococci_site_id = ?
         GROUP BY year, enterococci_quality_level
         ORDER BY year ASC
-      `, [beachId]);
+        `,
+        [beachId]
+      );
 
       const yearlyStats = {};
       dataRows.forEach(row => {
-        if (!yearlyStats[row.year]) {
-          yearlyStats[row.year] = { total: 0, good: 0, fair: 0 };
-        }
+        if (!yearlyStats[row.year]) yearlyStats[row.year] = { total: 0, good: 0, fair: 0 };
         yearlyStats[row.year].total += row.count;
-        if (row.enterococci_quality_level === "Safe") {
-          yearlyStats[row.year].good += row.count;
-        } else if (row.enterococci_quality_level === "Relatively Safe") {
-          yearlyStats[row.year].fair += row.count;
-        }
+        const q = String(row.enterococci_quality_level || "").trim();
+        if (q === "Safe") yearlyStats[row.year].good += row.count;
+        else if (q === "Relatively Safe") yearlyStats[row.year].fair += row.count;
       });
 
       const yearlyArray = Object.entries(yearlyStats).map(([year, stats]) => ({
-        year: parseInt(year),
-        goodPercent: ((stats.good / stats.total) * 100).toFixed(1),
-        fairPercent: ((stats.fair / stats.total) * 100).toFixed(1),
-        rating: (((stats.good * 4) + (stats.fair * 3)) / stats.total).toFixed(2)
+        year: Number(year),
+        goodPercent: stats.total ? Number(((stats.good / stats.total) * 100).toFixed(1)) : 0,
+        fairPercent: stats.total ? Number(((stats.fair / stats.total) * 100).toFixed(1)) : 0,
+        rating: stats.total ? Number((((stats.good * 4) + (stats.fair * 3)) / stats.total).toFixed(2)) : 0
       }));
 
       results.push({ beachId, beachName, yearlyData: yearlyArray });
     }
+
+    console.log("[beach-comparison]", { table: ANALYTICS_TABLE, ids: results.map(r => r.beachId), db: DB_NAME });
     res.json(results);
   } catch (e) {
+    console.error("Beach-comparison error:", e);
     res.status(500).json({ error: "Failed to get comparison data", detail: e.message });
   }
 });
 
-/* ========== 启动服务 ========== */
+/* ========== Start ========== */
 const PORT = Number(process.env.PORT || 8787);
 app.listen(PORT, () => {
   console.log(`🚀 API listening at http://localhost:${PORT}`);
