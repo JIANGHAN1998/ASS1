@@ -214,6 +214,19 @@
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as d3 from 'd3'
 
+/** ========= 新增：统一 API 基础路径 ========= */
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+
+async function apiFetch (path, init) {
+  const res = await fetch(`${API_BASE}${path}`, init)
+  const ct = (res.headers.get('content-type') || '').toLowerCase()
+  if (!ct.includes('application/json')) {
+    const text = await res.text()
+    throw new Error(`Non-JSON response from ${path}: ${text.slice(0, 200)}`)
+  }
+  return res.json()
+}
+
 /** ========= 工具：识别真实滚动容器（修复子导航失效） ========= */
 function getScrollParent (element) {
   let el = element?.parentElement
@@ -295,10 +308,18 @@ onMounted(async () => {
 })
 
 async function checkConnection () {
-  try { await fetch('/api/ping').then(r => r.json()) } catch {}
+  try {
+    // 原先是 /api/ping（后端没有该路由），改为已有接口做健康检查
+    await apiFetch('/api/beaches')
+  } catch {}
 }
 async function loadBeaches () {
-  try { const res = await fetch('/api/beaches'); beaches.value = await res.json() } catch (e) { console.error('Failed to load beaches:', e) }
+  try {
+    const res = await apiFetch('/api/beaches')
+    beaches.value = res
+  } catch (e) {
+    console.error('Failed to load beaches:', e)
+  }
 }
 function populateYears () {
   const currentYear = new Date().getFullYear()
@@ -333,8 +354,7 @@ async function loadTopBeachesRecommendations () {
     if (!beaches.value.length) { try { await loadBeaches() } catch {} }
     for (const id of popularBeaches.slice(0, 3)) {
       try {
-        const r = await fetch(`/api/beach-data?beachId=${id}&year=2024`)
-        const data = await r.json()
+        const data = await apiFetch(`/api/beach-data?beachId=${id}&year=2024`)
         if (data.totalTests > 0) {
           const b = beaches.value.find(x => String(x.site_id) === String(id))
           const safePercent = ((data.qualityCounts.Safe || 0) / data.totalTests * 100)
@@ -404,8 +424,7 @@ async function analyzeBeach () {
   showLoading(chartContainer)
   try {
     const url = `/api/beach-data?beachId=${selectedBeachId.value}${selectedYear.value ? `&year=${selectedYear.value}` : ''}`
-    const res = await fetch(url)
-    const data = await res.json()
+    const data = await apiFetch(url)
     if (data.totalTests === 0) { if (chartContainer.value) chartContainer.value.innerHTML = '<div class="empty-state">No data available for selected period</div>'; return }
     await nextTick()
     renderBeachAnalysis(data, beach, selectedYear.value)
@@ -574,8 +593,7 @@ async function compareBeaches () {
   showLoading(comparisonContainer)
   const ids = [cmp.beach1, cmp.beach2, cmp.beach3].filter(Boolean).join(',')
   try {
-    const res = await fetch(`/api/beach-comparison?beachIds=${ids}`)
-    const data = await res.json()
+    const data = await apiFetch(`/api/beach-comparison?beachIds=${ids}`)
     await nextTick()
     renderBeachComparison(data)
     updateComparisonInsights(data)
@@ -802,3 +820,4 @@ function updateComparisonInsights (data) {
 }
 */
 </style>
+
