@@ -14,20 +14,17 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <!-- Map card -->
       <section class="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <!-- Title -->
         <header class="px-4 sm:px-6 pt-6">
           <h2 class="text-2xl sm:text-3xl font-extrabold text-center">
             Port Phillip Bay Safety Map
           </h2>
         </header>
 
-        <!-- Controls row -->
+        <!-- Controls -->
         <div class="px-4 sm:px-6 mt-6">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <!-- search -->
-            <div
-              class="flex items-center gap-3 rounded-2xl border border-slate-400 bg-slate-200 w-full px-5 py-3 shadow-sm"
-            >
+            <!-- Search -->
+            <div class="flex items-center gap-3 rounded-2xl border border-slate-400 bg-slate-200 w-full px-5 py-3 shadow-sm">
               <input
                 v-model="kw"
                 @keyup.enter="handleSearch"
@@ -38,7 +35,7 @@
               <button class="btn-chip-blue" title="Fullscreen" @click="toggleFullscreen">⤢</button>
             </div>
 
-            <!-- date picker -->
+            <!-- Date -->
             <div class="flex items-center gap-3">
               <label class="text-sm font-semibold text-slate-700">Date</label>
               <input
@@ -53,26 +50,26 @@
           </div>
         </div>
 
-        <!-- Map canvas -->
+        <!-- Map -->
         <div class="px-4 sm:px-6">
           <div class="relative mt-5 mb-6 overflow-hidden rounded-xl border border-slate-300">
             <div ref="mapEl" class="h-[68vh] min-h-[460px] w-full"></div>
 
-            <!-- bottom-right buttons -->
+            <!-- Bottom-right buttons -->
             <div class="absolute right-3 bottom-3 flex gap-2">
               <button class="btn-ui" @click="showDisclaimer = !showDisclaimer">Disclaimer</button>
               <button class="btn-ui" @click="openLegend">View pin legend</button>
             </div>
 
-            <!-- floating disclaimer -->
+            <!-- Floating disclaimer -->
             <div
               v-if="showDisclaimer"
               class="absolute right-3 bottom-16 w-80 rounded-xl border border-slate-200 bg-white/95 p-3 shadow"
             >
               <b class="text-sm">Notes</b>
               <p class="mt-1 text-sm leading-relaxed text-slate-600">
-                Colours &amp; badges use <b>rainfall (24h/48h)</b> and <b>sea surface temperature</b>
-                up to the selected date (local time). Rainfall/Temp via Open-Meteo.
+                Colours &amp; badges use <b>hourly precipitation (24h/48h)</b> and <b>sea surface temperature</b>
+                on the selected date (local time). Data by Open-Meteo.
               </p>
             </div>
           </div>
@@ -86,7 +83,7 @@
                 <span class="mt-1 inline-block h-3.5 w-3.5 rounded-full bg-green-500"></span>
                 <div>
                   <div class="font-semibold text-green-700">Safe</div>
-                  <p class="text-sm text-green-700/80">Low rain &amp; comfortable water temperature.</p>
+                  <p class="text-sm text-green-700/80">Little/no rain &amp; comfortable water temp.</p>
                 </div>
               </div>
             </div>
@@ -95,7 +92,7 @@
                 <span class="mt-1 inline-block h-3.5 w-3.5 rounded-full bg-amber-500"></span>
                 <div>
                   <div class="font-semibold text-amber-700">Caution</div>
-                  <p class="text-sm text-amber-700/80">Moderate rain or cool/hot water.</p>
+                  <p class="text-sm text-amber-700/80">Recent light rain or cool/hot water.</p>
                 </div>
               </div>
             </div>
@@ -103,7 +100,7 @@
               <div class="flex items-start gap-3">
                 <span class="mt-1 inline-block h-3.5 w-3.5 rounded-full bg-rose-500"></span>
                 <div>
-                  <div class="font-semibold text-rose-700">Unsafe</div>
+                  <div class="font-semibold text-rose-700">Very Unsafe</div>
                   <p class="text-sm text-rose-700/80">Heavy rain or very cold water.</p>
                 </div>
               </div>
@@ -166,7 +163,7 @@
     <footer class="bg-slate-900 text-white">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="flex items-center justify-between text-sm">
-          <div>© 2025 SwimMate · Built for Port Phillip Bay.</div>
+          <div>© 2025 OceanMate · Built for Port Phillip Bay.</div>
           <nav class="flex gap-6">
             <a href="#" class="hover:underline">Privacy</a>
             <a href="#" class="hover:underline">Accessibility</a>
@@ -185,39 +182,35 @@ import * as L from 'leaflet'
 import { fetchSites } from '@/services/dbApi'
 import { reverseGeocodeClient, forwardGeocodeClient } from '@/services/revgeoClient'
 
-/* ====== Stricter rainfall thresholds (mm) ====== */
-/* 想再严格就把这些数字调得更小 */
-const RAIN_UNSAFE_24 = 5     // 24h >= 5 → red
-const RAIN_UNSAFE_48 = 10    // 48h >= 10 → red
-const RAIN_CAUTION_24_MIN = 2   // [2,5) → amber
-const RAIN_CAUTION_48_MIN = 5   // [5,10) → amber
-
-/* ====== Water temperature thresholds (°C) ====== */
-const TEMP_UNSAFE_COLD = 16            // <16 → red
-const TEMP_CAUTION_COOL_MAX = 18       // [16,18) → amber
-const TEMP_COMFORT_MIN = 18            // [18,25] → green
-const TEMP_COMFORT_MAX = 25
-const TEMP_CAUTION_HOT = 28            // >28 → amber
+/* ===== Rain thresholds (mm) ===== */
+const RAIN_RED_24 = 10      // heavy in 24h
+const RAIN_RED_48 = 15      // heavy in 48h
+/* ===== Water temperature thresholds (°C) ===== */
+const TEMP_RED_COLD = 16
+const TEMP_AMBER_COOL_MAX = 18
+const TEMP_GREEN_MIN = 18
+const TEMP_GREEN_MAX = 25
+const TEMP_AMBER_HOT_MIN = 28
 
 const router = useRouter()
 const go = (path) => router.push(path)
-
 const kw = ref('')
 const showDisclaimer = ref(false)
+
 const mapEl = ref(null)
 let map, markersLayer, pinAtQuery
 
-// === Date state ===
+// Date state
 const todayStr = new Date().toISOString().slice(0,10)
 const selectedDate = ref(todayStr)
 function resetToToday() { selectedDate.value = todayStr; handleDateChange() }
 function handleDateChange() { drawSites().catch(() => {}) }
 
-// 缓存（含日期）
-const rainCache = new Map() // key: "lat.round,lng.round,date"
+// caches
+const rainCache = new Map()
 const tempCache = new Map()
 
-/* ===== Leaflet marker icon ===== */
+/* Leaflet icon */
 const DefaultIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -238,33 +231,39 @@ function toggleFullscreen() {
 }
 function openLegend() {
   alert('Legend (rain + water temperature):\n' +
-        '● Green = Safe\n● Amber = Caution\n● Red = Unsafe\n\n' +
-        'Computed from rainfall (last 24h/48h) and sea surface temperature.')
+        'Green = Safe\nAmber = Caution\nRed = Very Unsafe\n\n' +
+        'Computed from hourly precipitation (24h/48h) and sea surface temperature.')
 }
 
-/* --------- date helpers (for temp) ---------- */
-function parseYMD(s){
-  const [y,m,d] = s.split('-').map(n=>Number(n))
-  return new Date(y, m-1, d, 23, 30, 0, 0).getTime() // local 23:30
-}
+/* date helpers */
 function ymdShift(dateStr, days){
   const t = new Date(dateStr); t.setDate(t.getDate()+days)
   return t.toISOString().slice(0,10)
 }
 
-/* ============== Rain logic (index-slice; TZ-safe) ============== */
-function assessRain(sum24, sum48){
-  if (sum24 >= RAIN_UNSAFE_24 || sum48 >= RAIN_UNSAFE_48) return 'red'
-  if (sum24 >= RAIN_CAUTION_24_MIN || sum48 >= RAIN_CAUTION_48_MIN) return 'amber'
+/* ===== Classification rules ===== */
+function tempFlag(temp){
+  if (temp == null || Number.isNaN(temp)) return 'unknown'
+  if (temp < TEMP_RED_COLD) return 'red_cold'
+  if (temp < TEMP_AMBER_COOL_MAX) return 'amber_cool'  // [16,18)
+  if (temp > TEMP_AMBER_HOT_MIN) return 'amber_hot'    // >28
+  if (temp >= TEMP_GREEN_MIN && temp <= TEMP_GREEN_MAX) return 'green_ok'
+  return 'green_warm'
+}
+
+function computeOverall({ sum24, sum48, isNowRaining, tflag }) {
+  if (sum24 >= RAIN_RED_24 || sum48 >= RAIN_RED_48 || tflag === 'red_cold') return 'red'
+  if (isNowRaining || sum24 > 0 || sum48 > 0 || tflag === 'amber_cool' || tflag === 'amber_hot') return 'amber'
   return 'green'
 }
 
+/* ===== Fetch rain (precipitation-first) ===== */
 async function fetchRainFor(lat, lng, selectedDateStr){
   const key = `${lat.toFixed(2)},${lng.toFixed(2)},${selectedDateStr}`
   const cached = rainCache.get(key)
   if (cached && Date.now() - cached.ts < 10*60*1000) return cached
 
-  let sum24 = 0, sum48 = 0
+  let sum24 = 0, sum48 = 0, isNowRaining = false
   const startDate = ymdShift(selectedDateStr, -2)
   const endDate = selectedDateStr
 
@@ -272,89 +271,69 @@ async function fetchRainFor(lat, lng, selectedDateStr){
     const url = new URL('https://api.open-meteo.com/v1/forecast')
     url.searchParams.set('latitude', lat)
     url.searchParams.set('longitude', lng)
-    url.searchParams.set('hourly', 'rain,precipitation')
+    url.searchParams.set('hourly', 'precipitation,rain')
     url.searchParams.set('start_date', startDate)
     url.searchParams.set('end_date', endDate)
-    url.searchParams.set('timezone', 'Australia/Sydney') // 必须固定
+    url.searchParams.set('timezone', 'Australia/Sydney')
     const res = await fetch(url.toString())
     if (!res.ok) throw new Error('rain_fetch_failed')
     const data = await res.json()
 
-    const times = data?.hourly?.time ?? []
-    const arrRain = data?.hourly?.rain ?? []
+    const times   = data?.hourly?.time ?? []
     const arrPrec = data?.hourly?.precipitation ?? []
-    const vals = (arrRain?.length ? arrRain : arrPrec) ?? []
+    const arrRain = data?.hourly?.rain ?? []
+    const vals = (arrPrec?.length ? arrPrec : arrRain) ?? []
 
     if (!times.length || !vals.length) throw new Error('hourly_empty')
 
-    // 找 selectedDate 当天的“截止小时”索引：优先 23:00，否则取当天最后一小时
-    const tailCandidates = [
-      `${selectedDateStr}T23:00`,
-      `${selectedDateStr}T22:00`,
-      `${selectedDateStr}T21:00`,
-    ]
+    // Index of last hour of the day (prefer 23:00)
+    const tail = [`${selectedDateStr}T23:00`,`${selectedDateStr}T22:00`,`${selectedDateStr}T21:00`]
     let endIdx = -1
-    for (const c of tailCandidates){
-      endIdx = times.lastIndexOf(c); if (endIdx !== -1) break
-    }
-    if (endIdx === -1) {
-      endIdx = times.findLastIndex(t => t.startsWith(selectedDateStr))
-      if (endIdx === -1) endIdx = times.length - 1
-    }
+    for (const c of tail){ endIdx = times.lastIndexOf(c); if (endIdx !== -1) break }
+    if (endIdx === -1) { endIdx = times.findLastIndex(t => t.startsWith(selectedDateStr)); if (endIdx === -1) endIdx = times.length - 1 }
+
+    const lastVal = Number(vals[endIdx] ?? 0)
+    isNowRaining = Number.isFinite(lastVal) && lastVal > 0
 
     const from24 = Math.max(0, endIdx - 23)
     const from48 = Math.max(0, endIdx - 47)
     for (let i=from24;i<=endIdx;i++) sum24 += Number(vals[i])||0
     for (let i=from48;i<=endIdx;i++) sum48 += Number(vals[i])||0
-
   } catch (e) {
-    // 回退 daily
+    // Fallback to daily
     try {
       const url = new URL('https://api.open-meteo.com/v1/forecast')
       url.searchParams.set('latitude', lat)
       url.searchParams.set('longitude', lng)
-      url.searchParams.set('daily', 'rain_sum')
-      url.searchParams.set('start_date', startDate)
-      url.searchParams.set('end_date', endDate)
+      url.searchParams.set('daily', 'precipitation_sum,rain_sum')
+      url.searchParams.set('start_date', ymdShift(selectedDateStr,-1))
+      url.searchParams.set('end_date', selectedDateStr)
       url.searchParams.set('timezone', 'Australia/Sydney')
       const r = await fetch(url.toString())
       if (!r.ok) throw new Error('daily_failed')
       const d = await r.json()
-      const sums = d?.daily?.rain_sum ?? []
+      const sums = d?.daily?.precipitation_sum ?? d?.daily?.rain_sum ?? []
       const last = Number(sums[sums.length-1])||0
       const prev = Number(sums[sums.length-2])||0
       sum24 = last; sum48 = last + prev
+      isNowRaining = last > 0
     } catch {
-      sum24 = 0; sum48 = 0
+      sum24 = 0; sum48 = 0; isNowRaining = false
     }
   }
 
-  const out = { sum24: +sum24.toFixed(1), sum48: +sum48.toFixed(1), ts: Date.now() }
+  const out = { sum24: +sum24.toFixed(1), sum48: +sum48.toFixed(1), isNowRaining, ts: Date.now() }
   rainCache.set(key, out); return out
 }
 
-/* ============== Water temperature (Open-Meteo Marine) ============== */
-function assessTemp(temp){
-  if (temp == null || Number.isNaN(temp)) return 'unknown'
-  if (temp < TEMP_UNSAFE_COLD) return 'red_cold'
-  if (temp < TEMP_CAUTION_COOL_MAX) return 'amber_cool' // [16,18)
-  if (temp > TEMP_CAUTION_HOT) return 'amber_hot'       // >28
-  if (temp >= TEMP_COMFORT_MIN && temp <= TEMP_COMFORT_MAX) return 'green_comfort'
-  return 'green_warm'
-}
-function combineStatuses(rainStatus, tempFlag){
-  if (rainStatus === 'red') return 'red'
-  if (tempFlag === 'red_cold') return 'red'
-  if (rainStatus === 'amber' || tempFlag === 'amber_cool' || tempFlag === 'amber_hot') return 'amber'
-  return 'green'
-}
+/* ===== Fetch sea surface temperature ===== */
 async function fetchTempFor(lat, lng, selectedDateStr){
   const key = `${lat.toFixed(2)},${lng.toFixed(2)},${selectedDateStr}`
   const cached = tempCache.get(key)
   if (cached && Date.now() - cached.ts < 10*60*1000) return cached
 
   const endDate = selectedDateStr
-  const startDate = ymdShift(selectedDateStr, -1) // 覆盖到前一日
+  const startDate = ymdShift(selectedDateStr, -1)
   let temp = null
 
   try {
@@ -371,14 +350,12 @@ async function fetchTempFor(lat, lng, selectedDateStr){
     const times = data?.hourly?.time ?? []
     const vals = data?.hourly?.sea_surface_temperature ?? []
     if (times.length && vals.length){
-      // 取 selectedDate 当天最后一个小时的温度（若没有则最近的）
       let endIdx = times.findLastIndex(t => t.startsWith(selectedDateStr))
       if (endIdx === -1) endIdx = times.length - 1
       temp = Number(vals[endIdx])
       if (!Number.isFinite(temp)) temp = null
     } else { throw new Error('sst_hourly_empty') }
   } catch {
-    // 回退：日最高/最低取平均
     try {
       const u = new URL('https://api.open-meteo.com/v1/marine')
       u.searchParams.set('latitude', lat)
@@ -403,9 +380,9 @@ async function fetchTempFor(lat, lng, selectedDateStr){
   tempCache.set(key, out); return out
 }
 
-/* ===================== UI helpers ===================== */
+/* UI helpers */
 function statusBadgeHtml(st){
-  const text = st === 'red' ? 'Unsafe' : (st === 'amber' ? 'Caution' : 'Safe')
+  const text = st === 'red' ? 'Very Unsafe' : (st === 'amber' ? 'Caution' : 'Safe')
   const bg = st === 'red' ? '#fee2e2' : (st === 'amber' ? '#fef3c7' : '#dcfce7')
   const fg = st === 'red' ? '#b91c1c' : (st === 'amber' ? '#92400e' : '#166534')
   return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;background:${bg};color:${fg};font-weight:600;font-size:12px">${text}</span>`
@@ -414,12 +391,12 @@ function tempFlagText(flag){
   if (flag==='red_cold') return 'Very cold'
   if (flag==='amber_cool') return 'Cool'
   if (flag==='amber_hot') return 'Hot'
-  if (flag==='green_comfort') return 'Comfortable'
+  if (flag==='green_ok') return 'Comfortable'
   if (flag==='green_warm') return 'Warm'
   return 'N/A'
 }
 
-/* ===================== Draw map & pins ===================== */
+/* Draw map & pins */
 async function drawSites() {
   const rows = await fetchSites()
   markersLayer?.clearLayers()
@@ -431,11 +408,14 @@ async function drawSites() {
     if (Number.isNaN(lat) || Number.isNaN(lng)) return
 
     const marker = L.circleMarker([lat, lng], {
-      radius: 8, color: '#64748b', weight: 2, fillColor: '#64748b', fillOpacity: 0.65
+      radius: 8, color: '#64748b', weight: 2,       fillColor: '#64748b', fillOpacity: 0.65
     })
 
+    // Cache environment data: ensure popup and marker color are consistent
+    let envData = null
+
     marker.bindPopup(`
-      <div style="min-width:270px">
+      <div style="min-width:280px">
         <strong>${s.site_name ?? 'Unnamed beach'}</strong><br/>
         ${s.water_body ?? 'Port Phillip Bay'}<br/>
         <div style="margin-top:6px;font-size:13px;color:#334155">
@@ -454,46 +434,49 @@ async function drawSites() {
       catch { return '' }
     }
 
-    let envFetched = false
     async function ensureEnvAndUpdate(){
-      if (envFetched) return null
-      envFetched = true
+      if (envData) return envData
       try{
-        const [rain, temp] = await Promise.all([
+        const [rain, sst] = await Promise.all([
           fetchRainFor(lat, lng, selectedDate.value),
           fetchTempFor(lat, lng, selectedDate.value),
         ])
-        const rainStatus = assessRain(rain.sum24, rain.sum48)
-        const tflag = assessTemp(temp?.temp)
-        const finalStatus = combineStatuses(rainStatus, tflag)
-        const c = statusColor(finalStatus)
+        const tflag = tempFlag(sst?.temp)
+        const overall = computeOverall({ sum24: rain.sum24, sum48: rain.sum48, isNowRaining: rain.isNowRaining, tflag })
+        envData = { sum24: rain.sum24, sum48: rain.sum48, isNowRaining: rain.isNowRaining, temp: sst?.temp, tflag, overall }
+        const c = statusColor(envData.overall)
         marker.setStyle({ color: c, fillColor: c })
-        return { sum24: rain.sum24, sum48: rain.sum48, temp: temp?.temp, tflag, finalStatus }
-      } catch { return null }
+        return envData
+      } catch {
+        envData = { sum24: 0, sum48: 0, isNowRaining: false, temp: null, tflag: 'unknown', overall: 'green' }
+        const c = statusColor(envData.overall)
+        marker.setStyle({ color: c, fillColor: c })
+        return envData
+      }
     }
 
     marker.on('popupopen', async () => {
       const [shortAddr, env] = await Promise.all([ensureAddress(), ensureEnvAndUpdate()])
-      const info = env || { sum24: 0, sum48: 0, temp: null, tflag: 'unknown', finalStatus: 'green' }
-      const finalBadge = statusBadgeHtml(info.finalStatus)
-
+      const info = env
+      const badge = statusBadgeHtml(info.overall)
       marker.setPopupContent(`
-        <div style="min-width:270px">
-          <strong>${s.site_name ?? 'Unnamed beach'}</strong> ${finalBadge}<br/>
+        <div style="min-width:280px">
+          <strong>${s.site_name ?? 'Unnamed beach'}</strong> ${badge}<br/>
           ${s.water_body ?? 'Port Phillip Bay'}<br/>
           ${ shortAddr ? `<span style="font-size:13px;color:#334155">${shortAddr}</span>` : `<em style="font-size:13px;color:#64748b">Address unavailable</em>` }
           <div style="margin-top:6px;font-size:13px;color:#334155">
             Date: <b>${selectedDate.value}</b><br/>
             Rain 24h: <b>${info.sum24}mm</b> · 48h: <b>${info.sum48}mm</b><br/>
+            Now raining: <b>${info.isNowRaining ? 'Yes' : 'No'}</b><br/>
             Water temp: <b>${info.temp!=null ? info.temp + '°C' : 'N/A'}</b> (${tempFlagText(info.tflag)})<br/>
-            Overall: ${finalBadge}
+            Overall: ${badge}
           </div>
           <a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;display:inline-block;margin-top:6px;">Open in Google Maps</a>
         </div>
       `)
     })
 
-    // 预拉数据用于上色
+    // Prefetch and color
     ensureEnvAndUpdate().catch(() => {})
 
     layer.addLayer(marker)
@@ -506,7 +489,7 @@ async function drawSites() {
   if (bounds.isValid()) map.fitBounds(bounds.pad(0.1))
 }
 
-/* -------- misc helpers -------- */
+/* helpers */
 function cleanAddress(addr) {
   if (!addr) return ''
   let s = String(addr)
